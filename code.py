@@ -1,77 +1,85 @@
-# app.py
-
+import logging
+logging.getLogger('joblib').setLevel(logging.ERROR)
+logging.getLogger('streamlit.runtime.caching').setLevel(logging.ERROR)
 import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
 
-# Page title
-st.title("👔 Employee Salary Prediction using Random Forest")
+# Title
+st.title("Employee Salary Prediction using Random Forest")
 
-# Upload CSV file
-uploaded_file = st.file_uploader("C:/Chinnu work/adult 3.csv")
+# Load data
+@st.cache_data
+def load_data():
+    df = pd.read_csv("C:/Chinnu work/adult 3.csv")
+    return df
 
-if uploaded_file is not None:
-    # Load dataset
-    data = pd.read_csv(uploaded_file)
+df = load_data()
 
-    st.subheader("📊 Raw Dataset")
-    st.write(data.head())
+# Encode categorical columns
+label_encoders = {}
+for column in df.select_dtypes(include=['object']).columns:
+    le = LabelEncoder()
+    df[column] = le.fit_transform(df[column])
+    label_encoders[column] = le
 
-    # Drop rows with missing values (if any)
-    data.replace(' ?', np.nan, inplace=True)
-    data.dropna(inplace=True)
+# Split data
+X = df.drop('income', axis=1)
+y = df['income']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Encode categorical features
-    label_encoders = {}
-    for column in data.select_dtypes(include=['object']).columns:
-        le = LabelEncoder()
-        data[column] = le.fit_transform(data[column])
-        label_encoders[column] = le
+# Train model
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
 
-    # Features and Target
-    X = data.drop('salary', axis=1)
-    y = data['salary']
+# User input for prediction
+st.sidebar.header("Enter Employee Details")
+def user_input_features():
+    age = st.sidebar.slider('Age', 17, 90, 30)
+    workclass = st.sidebar.selectbox('Workclass', label_encoders['workclass'].classes_)
+    education = st.sidebar.selectbox('Education', label_encoders['education'].classes_)
+    marital_status = st.sidebar.selectbox('Marital Status', label_encoders['marital-status'].classes_)
+    occupation = st.sidebar.selectbox('Occupation', label_encoders['occupation'].classes_)
+    relationship = st.sidebar.selectbox('Relationship', label_encoders['relationship'].classes_)
+    race = st.sidebar.selectbox('Race', label_encoders['race'].classes_)
+    gender = st.sidebar.selectbox('Gender', label_encoders['gender'].classes_)
+    hours = st.sidebar.slider('Hours per week', 1, 99, 40)
 
-    # Scale features
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    # Map user input to encoded values
+    data = {
+        'age': age,
+        'workclass': label_encoders['workclass'].transform([workclass])[0],
+        'fnlwgt': 0,  # Placeholder
+        'education': label_encoders['education'].transform([education])[0],
+        'educational-num': 10,  # Placeholder
+        'marital-status': label_encoders['marital-status'].transform([marital_status])[0],
+        'occupation': label_encoders['occupation'].transform([occupation])[0],
+        'relationship': label_encoders['relationship'].transform([relationship])[0],
+        'race': label_encoders['race'].transform([race])[0],
+        'gender': label_encoders['gender'].transform([gender])[0],
+        'capital-gain': 0,  # Placeholder
+        'capital-loss': 0,  # Placeholder
+        'hours-per-week': hours,
+        'native-country': 0  # Placeholder
+    }
 
-    # Train-Test Split
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+    return pd.DataFrame([data])
 
-    # Random Forest Model
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
+input_df = user_input_features()
 
-    # Predictions
-    y_pred = model.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
+# Predict
+prediction = model.predict(input_df)
+prediction_label = label_encoders['income'].inverse_transform(prediction)
 
-    # Display Results
-    st.subheader("✅ Model Accuracy")
-    st.write(f"Accuracy: **{accuracy * 100:.2f}%**")
+# Output
+st.subheader("Prediction")
+st.write(f"Predicted Salary Category: **{prediction_label[0]}**")
 
-    st.subheader("📄 Classification Report")
-    st.text(classification_report(y_test, y_pred))
-
-    # User Input for Prediction
-    st.subheader("🧠 Predict Salary Category")
-
-    input_data = {}
-    for col in X.columns:
-        dtype = data[col].dtype
-        if dtype == 'int64' or dtype == 'float64':
-            input_data[col] = st.number_input(f"Enter {col}", value=float(data[col].mean()))
-        else:
-            input_data[col] = st.selectbox(f"Select {col}", data[col].unique())
-
-    if st.button("Predict"):
-        input_df = pd.DataFrame([input_data])
-        input_df = scaler.transform(input_df)
-        prediction = model.predict(input_df)[0]
-        result = label_encoders['salary'].inverse_transform([prediction])[0]
-        st.success(f"Predicted Salary Category: **{result}**")
+# Optional: Accuracy score
+y_pred = model.predict(X_test)
+acc = accuracy_score(y_test, y_pred)
+st.write(f"Model Accuracy: **{acc * 100:.2f}%**")
