@@ -1,65 +1,52 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+
+st.title("💼 Employee Salary Prediction")
 
 @st.cache_data
 def load_data():
     df = pd.read_csv("C:/Chinnu work/adult 3.csv")
-
+    df = df.dropna()
     return df
 
-@st.cache_data
-def preprocess_data(df):
-    df = df.copy()
-    df = df.replace('?', np.nan).dropna()
+data = load_data()
 
-    label_encoders = {}
-    for col in df.select_dtypes(include=['object']).columns:
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col])
-        label_encoders[col] = le
+# Encode categorical columns
+le_dict = {}
+for col in data.select_dtypes(include='object').columns:
+    le = LabelEncoder()
+    data[col] = le.fit_transform(data[col])
+    le_dict[col] = le
 
-    X = df.drop('income', axis=1)
-    y = df['income']
-    return X, y, label_encoders
+X = data.drop("income", axis=1)
+y = data["income"]
 
-def main():
-    st.title("💼 Employee Salary Prediction")
-    st.write("Predict whether a person earns more than 50K or not using employee attributes.")
+# Train model
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
 
-    df = load_data()
-    X, y, label_encoders = preprocess_data(df)
+# Sidebar input
+st.sidebar.header("Enter employee info:")
 
-    model = RandomForestClassifier()
-    model.fit(X, y)
-
-    st.sidebar.header("Enter Employee Details")
+def user_input():
     input_data = {}
-
     for col in X.columns:
-        if df[col].dtype == 'object' or df[col].nunique() < 20:
-            val = st.sidebar.selectbox(col, sorted(df[col].unique()))
+        if col in le_dict:
+            options = list(le_dict[col].classes_)
+            val = st.sidebar.selectbox(col, options)
+            input_data[col] = le_dict[col].transform([val])[0]
         else:
-            val = st.sidebar.slider(col, int(df[col].min()), int(df[col].max()))
-        input_data[col] = val
+            val = st.sidebar.slider(col, int(X[col].min()), int(X[col].max()), int(X[col].mean()))
+            input_data[col] = val
+    return pd.DataFrame([input_data])
 
-    # Convert input to DataFrame
-    input_df = pd.DataFrame([input_data])
+input_df = user_input()
 
-    # Encode inputs if needed
-    for col in input_df.columns:
-        if col in label_encoders:
-            input_df[col] = label_encoders[col].transform(input_df[col])
-
-    # Predict
-    prediction = model.predict(input_df)[0]
-    result = label_encoders['income'].inverse_transform([prediction])[0]
-
-    st.subheader("📊 Prediction Result")
-    st.success(f"The model predicts this person earns: **{result}**")
-
-if __name__ == '__main__':
-    main()
+if st.button("Predict Salary Category"):
+    prediction = model.predict(input_df)
+    output = le_dict["income"].inverse_transform(prediction)[0]
+    st.success(f"🧠 Predicted Salary: **{output}**")
